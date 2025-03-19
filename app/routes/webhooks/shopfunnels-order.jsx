@@ -1,55 +1,17 @@
-import { json } from "@remix-run/node";
-import { shopifyApp } from "@shopify/shopify-app-remix";
+import { json } from "@remix-run/server-runtime";
 
 export const action = async ({ request }) => {
+  if (request.method !== "POST") {
+    return json({ error: "Method Not Allowed" }, { status: 405 });
+  }
+
   try {
     const shopfunnelsOrder = await request.json();
-
     console.log("Received ShopFunnels Order:", shopfunnelsOrder);
 
-    // Map ShopFunnels order to Shopify format
-    const shopifyOrder = {
-      line_items: shopfunnelsOrder.items.map(item => ({
-        title: item.name,
-        quantity: item.quantity,
-        price: item.price
-      })),
-      customer: {
-        first_name: shopfunnelsOrder.customer.first_name,
-        last_name: shopfunnelsOrder.customer.last_name,
-        email: shopfunnelsOrder.customer.email
-      },
-      financial_status: "paid"
-    };
-
-    // Initialize Shopify API Client
-    const shopify = shopifyApp();
-    const session = await shopify.sessionStorage.load(request);
-
-    if (!session) {
-      return json({ error: "Shopify session not found" }, { status: 401 });
-    }
-
-    const shopifyResponse = await fetch(
-      `https://${session.shop}/admin/api/2024-01/orders.json`,
-      {
-        method: "POST",
-        headers: {
-          "X-Shopify-Access-Token": session.accessToken,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ order: shopifyOrder }),
-      }
-    );
-
-    if (!shopifyResponse.ok) {
-      throw new Error("Failed to create order in Shopify");
-    }
-
-    console.log("Order created in Shopify:", await shopifyResponse.json());
-    return json({ success: true });
+    return json({ success: true, message: "Order received" });
   } catch (error) {
-    console.error("Error processing ShopFunnels webhook:", error);
+    console.error("Webhook Error:", error);
     return json({ error: "Internal Server Error" }, { status: 500 });
   }
 };
