@@ -1,0 +1,17 @@
+this is a shopify app. It uses shopify api to create orders in shopify. It uses webhooks to listen for events from shopfunnels.
+
+the webhooks are:
+- shopfunnels-order
+- shopfunnels-customer
+- shopfunnels-product
+
+
+
+It uses the remix framework. The routes are in the app/routes folder.
+
+The shopify api is used to create orders in shopify. The api is accessed through the shopify.server.js file.
+
+The webhooks are handled in the app/routes/webhooks folder.
+
+
+The app is deployed on Railway. 

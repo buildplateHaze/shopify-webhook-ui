@@ -1,5 +1,21 @@
 import { json } from "@remix-run/server-runtime";
 import { authenticate } from "../shopify.server";
+import crypto from 'crypto';
+
+function validateShopifyHmac(request, rawBody) {
+  const hmac = request.headers.get('x-shopify-hmac-sha256');
+  if (!hmac) return false;
+  
+  const hash = crypto
+    .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
+    .update(rawBody, 'utf8')
+    .digest('base64');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(hash),
+    Buffer.from(hmac)
+  );
+}
 
 // Function to fetch all Shopify products and match by SKU
 async function getShopifyVariantId(admin, sku) {
@@ -27,11 +43,18 @@ export const action = async ({ request }) => {
   }
 
   try {
-    const webhookData = await request.json();
-    console.log("Received Webhook Payload:", webhookData);
+    // Get raw body for HMAC validation
+    const rawBody = await request.text();
+    const webhookData = JSON.parse(rawBody);
 
-    // Get the shop URL from the headers or query params
-    const shop = request.headers.get('x-shopify-shop-domain') || new URL(request.url).searchParams.get('shop');
+    // Validate the webhook signature
+    if (!validateShopifyHmac(request, rawBody)) {
+      console.error("HMAC validation failed");
+      return json({ error: "Invalid signature" }, { status: 401 });
+    }
+
+    // Get the shop URL from the headers
+    const shop = request.headers.get('x-shopify-shop-domain');
     if (!shop) {
       return json({ error: "Shop parameter is required" }, { status: 400 });
     }
