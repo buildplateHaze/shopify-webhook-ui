@@ -1,5 +1,6 @@
 import { json } from "@remix-run/server-runtime";
 import { authenticate } from "../shopify.server";
+import crypto from 'crypto';
 
 // Function to find variant by SKU
 async function findVariantBySku(admin, sku) {
@@ -23,10 +24,33 @@ async function findVariantBySku(admin, sku) {
   }
 }
 
-// Verify API key
-function verifyApiKey(request) {
-  const apiKey = request.headers.get('x-api-key');
-  return apiKey === process.env.SHOPIFY_API_KEY;
+// Verify request signature
+function verifyRequest(request, rawBody) {
+  const timestamp = request.headers.get('x-timestamp');
+  const signature = request.headers.get('x-signature');
+
+  // Check if required headers are present
+  if (!timestamp || !signature) {
+    return false;
+  }
+
+  // Verify timestamp is within 5 minutes
+  const timestampAge = Date.now() - parseInt(timestamp);
+  if (timestampAge > 5 * 60 * 1000) { // 5 minutes
+    return false;
+  }
+
+  // Create expected signature
+  const expectedSignature = crypto
+    .createHmac('sha256', process.env.SHOPIFY_API_SECRET)
+    .update(timestamp + rawBody)
+    .digest('hex');
+
+  // Compare signatures
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
 }
 
 export const action = async ({ request }) => {
@@ -38,10 +62,17 @@ export const action = async ({ request }) => {
   }
 
   try {
-    // Verify API key
-    if (!verifyApiKey(request)) {
-      return json({ error: "Invalid API key" }, { status: 401 });
+    // Get raw body for signature verification
+    const rawBody = await request.text();
+    
+    // Verify request signature
+    if (!verifyRequest(request, rawBody)) {
+      return json({ error: "Invalid signature" }, { status: 401 });
     }
+
+    // Parse the raw body
+    const body = JSON.parse(rawBody);
+    console.log("Received order request:", body);
 
     // Get shop from query parameter
     const url = new URL(request.url);
@@ -54,10 +85,6 @@ export const action = async ({ request }) => {
 
     // Get admin access using offline token
     const { admin } = await authenticate.admin(request, shop);
-
-    // Parse request body
-    const body = await request.json();
-    console.log("Received order request:", body);
 
     // Validate required fields
     if (!body.sku || !body.quantity) {
