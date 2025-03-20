@@ -7,9 +7,6 @@ export const action = async ({ request }) => {
   }
 
   try {
-    // Try to authenticate with Shopify
-    const { admin } = await authenticate.admin(request);
-    
     const data = await request.json();
     console.log("Received Order Request:", data);
 
@@ -19,72 +16,52 @@ export const action = async ({ request }) => {
       return json({ error: "Shop parameter is required" }, { status: 400 });
     }
 
+    // Get admin API access with shop parameter
+    const { admin } = await authenticate.admin(request, shop);
+
+    // Validate required fields
+    if (!data.sku || !data.quantity) {
+      return json({ 
+        error: "Missing required fields", 
+        details: "sku and quantity are required" 
+      }, { status: 400 });
+    }
+
     // Find product by SKU
-    const { products } = await admin.graphql(`
-      query getProductBySKU($query: String!) {
-        products(first: 1, query: $query) {
-          edges {
-            node {
-              id
-              variants(first: 1) {
-                edges {
-                  node {
-                    id
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    `, {
-      variables: {
-        query: `sku:${data.sku}`
-      }
+    const { products } = await admin.rest.get({
+      path: 'products',
+      query: { sku: data.sku }
     });
 
-    if (products.edges.length === 0) {
+    const product = products.data.find(p => 
+      p.variants.some(v => v.sku === data.sku)
+    );
+
+    if (!product) {
       return json({ error: "SKU not found" }, { status: 404 });
     }
 
-    const variantId = products.edges[0].node.variants.edges[0].node.id;
+    const variant = product.variants.find(v => v.sku === data.sku);
 
-    // Create draft order
-    const response = await admin.graphql(`
-      mutation createDraftOrder($input: DraftOrderInput!) {
-        draftOrderCreate(input: $input) {
-          draftOrder {
-            id
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `, {
-      variables: {
-        input: {
-          lineItems: [{
-            variantId,
+    // Create order using REST API
+    const response = await admin.rest.post({
+      path: 'orders',
+      data: {
+        order: {
+          line_items: [{
+            variant_id: variant.id,
             quantity: data.quantity
           }],
-          email: data.email
+          customer: data.email ? { email: data.email } : undefined,
+          source_name: "create-order-api"
         }
-      }
+      },
     });
-
-    if (response.draftOrderCreate.userErrors.length > 0) {
-      return json({ 
-        error: "Failed to create order",
-        details: response.draftOrderCreate.userErrors 
-      }, { status: 400 });
-    }
 
     return json({
       success: true,
       message: "Order created successfully",
-      orderId: response.draftOrderCreate.draftOrder.id
+      order: response.data
     });
 
   } catch (error) {
