@@ -26,9 +26,9 @@ export const action = async ({ request }) => {
     return json({ error: "Method Not Allowed" }, { status: 405 });
   }
 
-  // Check for API key in headers
-  const apiKey = request.headers.get('x-api-key');
-  if (!apiKey || apiKey !== process.env.SHOPFUNNELS_API_KEY) {
+  // Check for webhook secret in headers
+  const webhookSecret = request.headers.get('x-webhook-secret');
+  if (!webhookSecret || webhookSecret !== 'ayrYqOYpx2LPVDhp') {
     return json({ error: "Unauthorized" }, { status: 401 });
   }
 
