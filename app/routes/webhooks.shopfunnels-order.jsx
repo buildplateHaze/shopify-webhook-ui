@@ -1,85 +1,84 @@
 import { json } from "@remix-run/server-runtime";
 import { authenticate } from "../shopify.server";
 
+// Function to fetch all Shopify products and match by SKU
+async function getShopifyVariantId(admin, sku) {
+  try {
+    const { products } = await admin.rest.get({
+      path: 'products',
+    });
+
+    for (let product of products) {
+      for (let variant of product.variants) {
+        if (variant.sku === sku) {
+          return variant.id;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching Shopify products:", error);
+  }
+  return null;
+}
+
 export const action = async ({ request }) => {
   if (request.method !== "POST") {
     return json({ error: "Method Not Allowed" }, { status: 405 });
   }
 
   try {
-    const shopfunnelsOrder = await request.json();
-    console.log("Received ShopFunnels Order:", shopfunnelsOrder);
+    const webhookData = await request.json();
+    console.log("Received Webhook Payload:", webhookData);
+
+    const { customerEmail, items } = webhookData;
+
+    if (!items || !Array.isArray(items)) {
+      return json({ error: "'items' field is missing or not an array" }, { status: 400 });
+    }
+
+    if (!customerEmail) {
+      return json({ error: "'customerEmail' field is missing or invalid" }, { status: 400 });
+    }
 
     const { admin } = await authenticate.admin(request);
 
-    // Process each line item
     const lineItems = [];
-    for (const item of shopfunnelsOrder.line_items) {
-      // Search for product by SKU
-      const { products } = await admin.graphql(`
-        query getProductBySKU($query: String!) {
-          products(first: 1, query: $query) {
-            edges {
-              node {
-                id
-                variants(first: 1) {
-                  edges {
-                    node {
-                      id
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `, {
-        variables: {
-          query: `sku:${item.sku}`
-        }
-      });
-
-      if (products.edges.length > 0) {
-        const product = products.edges[0].node;
-        const variantId = product.variants.edges[0].node.id;
-        
-        lineItems.push({
-          variantId,
-          quantity: item.quantity
-        });
+    for (let item of items) {
+      const variantId = await getShopifyVariantId(admin, item.sku);
+      if (variantId) {
+        lineItems.push({ variant_id: variantId, quantity: item.quantity });
+      } else {
+        console.error(`No matching Shopify SKU found for ${item.sku}`);
       }
     }
 
-    // Create Shopify order if products were found
-    if (lineItems.length > 0) {
-      const orderResponse = await admin.graphql(`
-        mutation createOrder($input: OrderInput!) {
-          orderCreate(input: $input) {
-            order {
-              id
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }
-      `, {
-        variables: {
-          input: {
-            lineItems,
-            email: shopfunnelsOrder.email,
-            // Add other order details as needed
-          }
-        }
-      });
-
-      console.log("Shopify Order Created:", orderResponse);
+    if (lineItems.length === 0) {
+      return json({ error: "No valid Shopify products found for this order." }, { status: 400 });
     }
 
-    return json({ success: true, message: "Order processed" });
+    // Create the order using REST API
+    const response = await admin.rest.post({
+      path: 'orders',
+      data: {
+        order: {
+          line_items: lineItems,
+          customer: { email: customerEmail }
+        }
+      },
+    });
+
+    console.log('Shopify Order Created:', response);
+    return json({ 
+      success: true, 
+      message: 'Order processed successfully',
+      shopifyResponse: response
+    });
+
   } catch (error) {
     console.error("Webhook Error:", error);
-    return json({ error: "Internal Server Error" }, { status: 500 });
+    return json({ 
+      error: "Failed to create Shopify order", 
+      details: error.message 
+    }, { status: 500 });
   }
 }; 
