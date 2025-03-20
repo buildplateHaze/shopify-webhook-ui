@@ -27,9 +27,12 @@ export const action = async ({ request }) => {
   }
 
   try {
+    // Clone the request for multiple body reads
+    const requestClone = request.clone();
+    
     // Try Shopify webhook authentication first
     try {
-      const { topic, shop, admin } = await authenticate.webhook(request);
+      const { topic, shop, admin } = await authenticate.webhook(requestClone);
       // If this succeeds, handle Shopify webhook...
       return json({ success: true });
     } catch (e) {
