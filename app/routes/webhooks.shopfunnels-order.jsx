@@ -26,13 +26,17 @@ export const action = async ({ request }) => {
     return json({ error: "Method Not Allowed" }, { status: 405 });
   }
 
-  // Check for webhook secret in headers
-  const webhookSecret = request.headers.get('x-webhook-secret');
-  if (!webhookSecret || webhookSecret !== 'ayrYqOYpx2LPVDhp') {
-    return json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
+    // Try Shopify webhook authentication first
+    try {
+      const { topic, shop, admin } = await authenticate.webhook(request);
+      // If this succeeds, handle Shopify webhook...
+      return json({ success: true });
+    } catch (e) {
+      // If Shopify auth fails, check for ShopFunnels webhook
+      console.log("Not a Shopify webhook, checking for ShopFunnels...");
+    }
+
     const webhookData = await request.json();
     console.log("Received Webhook Payload:", webhookData);
 
@@ -43,7 +47,7 @@ export const action = async ({ request }) => {
       return json({ error: "'items' field is missing or not an array" }, { status: 400 });
     }
 
-    // Get the shop URL from the headers or query params
+    // For ShopFunnels webhook, we'll need the shop parameter
     const shop = request.headers.get('x-shopify-shop-domain') || new URL(request.url).searchParams.get('shop');
     if (!shop) {
       return json({ error: "Shop parameter is required" }, { status: 400 });
