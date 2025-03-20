@@ -23,6 +23,12 @@ async function findVariantBySku(admin, sku) {
   }
 }
 
+// Verify API key
+function verifyApiKey(request) {
+  const apiKey = request.headers.get('x-api-key');
+  return apiKey === process.env.SHOPIFY_API_KEY;
+}
+
 export const action = async ({ request }) => {
   console.log("Received request to /api/create-order");
   
@@ -32,6 +38,11 @@ export const action = async ({ request }) => {
   }
 
   try {
+    // Verify API key
+    if (!verifyApiKey(request)) {
+      return json({ error: "Invalid API key" }, { status: 401 });
+    }
+
     // Get shop from query parameter
     const url = new URL(request.url);
     const shop = url.searchParams.get("shop");
@@ -41,18 +52,8 @@ export const action = async ({ request }) => {
       return json({ error: "Shop parameter is required" }, { status: 400 });
     }
 
-    // Get admin access
-    console.log("Attempting to authenticate...");
-    try {
-      const { admin } = await authenticate.admin(request, shop);
-      console.log("Authentication successful");
-    } catch (authError) {
-      console.error("Authentication error:", authError);
-      return json({ 
-        error: "Authentication failed", 
-        details: authError.message 
-      }, { status: 401 });
-    }
+    // Get admin access using offline token
+    const { admin } = await authenticate.admin(request, shop);
 
     // Parse request body
     const body = await request.json();
