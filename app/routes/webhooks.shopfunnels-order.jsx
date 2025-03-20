@@ -33,6 +33,16 @@ export const action = async ({ request }) => {
   }
 
   try {
+    const webhookData = await request.json();
+    console.log("Received Webhook Payload:", webhookData);
+
+    // Extract data from ShopFunnels format
+    const { customerEmail, items, billingAddress, shippingAddress } = webhookData;
+
+    if (!items || !Array.isArray(items)) {
+      return json({ error: "'items' field is missing or not an array" }, { status: 400 });
+    }
+
     // Get the shop URL from the headers or query params
     const shop = request.headers.get('x-shopify-shop-domain') || new URL(request.url).searchParams.get('shop');
     if (!shop) {
@@ -41,25 +51,15 @@ export const action = async ({ request }) => {
 
     // Get admin API access for the specific shop
     const { admin } = await authenticate.admin(request, shop);
-    
-    const webhookData = await request.json();
-    console.log("Received Webhook Payload:", webhookData);
-
-    const { customerEmail, items } = webhookData;
-
-    if (!items || !Array.isArray(items)) {
-      return json({ error: "'items' field is missing or not an array" }, { status: 400 });
-    }
-
-    if (!customerEmail) {
-      return json({ error: "'customerEmail' field is missing or invalid" }, { status: 400 });
-    }
 
     const lineItems = [];
     for (let item of items) {
       const variantId = await getShopifyVariantId(admin, item.sku);
       if (variantId) {
-        lineItems.push({ variant_id: variantId, quantity: item.quantity });
+        lineItems.push({ 
+          variant_id: variantId, 
+          quantity: item.quantity 
+        });
       } else {
         console.error(`No matching Shopify SKU found for ${item.sku}`);
       }
@@ -75,7 +75,31 @@ export const action = async ({ request }) => {
       data: {
         order: {
           line_items: lineItems,
-          customer: { email: customerEmail }
+          customer: { 
+            email: customerEmail,
+          },
+          billing_address: {
+            name: billingAddress.name,
+            address1: billingAddress.address,
+            address2: billingAddress.address2,
+            city: billingAddress.city,
+            province: billingAddress.state,
+            zip: billingAddress.zipCode,
+            country_code: billingAddress.country,
+            phone: billingAddress.phone,
+            company: billingAddress.companyName
+          },
+          shipping_address: {
+            name: shippingAddress.name,
+            address1: shippingAddress.address,
+            address2: shippingAddress.address2,
+            city: shippingAddress.city,
+            province: shippingAddress.state,
+            zip: shippingAddress.zipCode,
+            country_code: shippingAddress.country,
+            phone: shippingAddress.phone,
+            company: shippingAddress.companyName
+          }
         }
       },
     });
