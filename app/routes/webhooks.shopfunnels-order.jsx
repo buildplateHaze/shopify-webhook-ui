@@ -26,9 +26,21 @@ export const action = async ({ request }) => {
     return json({ error: "Method Not Allowed" }, { status: 405 });
   }
 
+  // Check for API key in headers
+  const apiKey = request.headers.get('x-api-key');
+  if (!apiKey || apiKey !== process.env.SHOPFUNNELS_API_KEY) {
+    return json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    // Get admin API access
-    const { admin } = await authenticate.admin(request);
+    // Get the shop URL from the headers or query params
+    const shop = request.headers.get('x-shopify-shop-domain') || new URL(request.url).searchParams.get('shop');
+    if (!shop) {
+      return json({ error: "Shop parameter is required" }, { status: 400 });
+    }
+
+    // Get admin API access for the specific shop
+    const { admin } = await authenticate.admin(request, shop);
     
     const webhookData = await request.json();
     console.log("Received Webhook Payload:", webhookData);
