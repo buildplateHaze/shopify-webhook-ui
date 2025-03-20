@@ -24,6 +24,8 @@ async function findVariantBySku(admin, sku) {
 }
 
 export const action = async ({ request }) => {
+  console.log("Received request to /api/create-order");
+  
   // Only allow POST requests
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
@@ -33,13 +35,24 @@ export const action = async ({ request }) => {
     // Get shop from query parameter
     const url = new URL(request.url);
     const shop = url.searchParams.get("shop");
+    console.log("Shop from URL:", shop);
     
     if (!shop) {
       return json({ error: "Shop parameter is required" }, { status: 400 });
     }
 
     // Get admin access
-    const { admin } = await authenticate.admin(request, shop);
+    console.log("Attempting to authenticate...");
+    try {
+      const { admin } = await authenticate.admin(request, shop);
+      console.log("Authentication successful");
+    } catch (authError) {
+      console.error("Authentication error:", authError);
+      return json({ 
+        error: "Authentication failed", 
+        details: authError.message 
+      }, { status: 401 });
+    }
 
     // Parse request body
     const body = await request.json();
@@ -87,7 +100,8 @@ export const action = async ({ request }) => {
     console.error("Error creating order:", error);
     return json({
       error: "Failed to create order",
-      details: error.message
+      details: error.message,
+      stack: error.stack // Include stack trace in development
     }, { status: 500 });
   }
 }; 

@@ -14,7 +14,7 @@ automatically_update_urls_on_dev = true
 api_version = "2025-01"
 
 "ORDERS_CREATE" = "/webhooks/shopfunnels-order"
-"CREATE_ORDER" = "/webhooks/create-order"
+"CREATE_ORDER" = "/api/create-order"
 
   [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
