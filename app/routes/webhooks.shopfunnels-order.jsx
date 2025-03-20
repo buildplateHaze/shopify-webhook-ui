@@ -26,18 +26,18 @@ export const action = async ({ request }) => {
     return json({ error: "Method Not Allowed" }, { status: 405 });
   }
 
+  // Verify ShopFunnels webhook secret
+  const webhookSecret = request.headers.get('x-webhook-secret');
+  if (!webhookSecret || webhookSecret !== 'ayrYqOYpx2LPVDhp') {
+    return json({ error: "Invalid webhook secret" }, { status: 401 });
+  }
+
   try {
     const webhookData = await request.json();
     console.log("Received Webhook Payload:", webhookData);
 
-    // Get the shop URL from the headers or query params
-    const shop = request.headers.get('x-shopify-shop-domain') || new URL(request.url).searchParams.get('shop');
-    if (!shop) {
-      return json({ error: "Shop parameter is required" }, { status: 400 });
-    }
-
-    // Get admin API access for the specific shop
-    const { admin } = await authenticate.admin(request, shop);
+    // Get admin API access using the default session
+    const { admin } = await authenticate.admin(request);
 
     const lineItems = [];
     for (let item of webhookData.items) {
@@ -46,7 +46,7 @@ export const action = async ({ request }) => {
         lineItems.push({ 
           variant_id: variantId, 
           quantity: item.quantity,
-          price: item.total / item.quantity // Calculate unit price
+          price: item.total / item.quantity
         });
       } else {
         console.error(`No matching Shopify SKU found for ${item.sku}`);
