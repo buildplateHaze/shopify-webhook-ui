@@ -2,13 +2,13 @@ import { json } from "@remix-run/server-runtime";
 import { authenticate } from "../shopify.server";
 
 // Function to fetch all Shopify products and match by SKU
-async function getShopifyVariantId(session, sku) {
+async function getShopifyVariantId(shop, accessToken, sku) {
   try {
     const response = await fetch(
-      `https://${session.shop}/admin/api/2023-10/products.json`,
+      `https://${shop}/admin/api/2023-10/products.json`,
       {
         headers: {
-          'X-Shopify-Access-Token': session.accessToken,
+          'X-Shopify-Access-Token': accessToken,
           'Content-Type': 'application/json'
         }
       }
@@ -31,23 +31,13 @@ async function getShopifyVariantId(session, sku) {
 }
 
 export const action = async ({ request }) => {
-  if (request.method !== "POST") {
-    return json({ error: "Method Not Allowed" }, { status: 405 });
+  const { topic, shop, admin } = await authenticate.webhook(request);
+
+  if (topic !== "SHOPFUNNELS_ORDER") {
+    return json({ message: "Wrong topic" }, { status: 400 });
   }
 
   try {
-    // Get the raw headers
-    const shopifyHeader = request.headers.get('x-shopify-shop-domain');
-    if (!shopifyHeader) {
-      return json({ error: "Missing shop domain header" }, { status: 401 });
-    }
-
-    // Get session without webhook validation
-    const { session } = await authenticate.public.appProxy(request);
-    if (!session) {
-      return json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const webhookData = await request.json();
     console.log("Received Webhook Payload:", webhookData);
 
@@ -63,7 +53,7 @@ export const action = async ({ request }) => {
 
     const lineItems = [];
     for (let item of items) {
-      const variantId = await getShopifyVariantId(session, item.sku);
+      const variantId = await getShopifyVariantId(shop, admin.accessToken, item.sku);
       if (variantId) {
         lineItems.push({ variant_id: variantId, quantity: item.quantity });
       } else {
@@ -75,25 +65,17 @@ export const action = async ({ request }) => {
       return json({ error: "No valid Shopify products found for this order." }, { status: 400 });
     }
 
-    // Create the order using REST API
-    const orderResponse = await fetch(
-      `https://${session.shop}/admin/api/2023-10/orders.json`,
-      {
-        method: 'POST',
-        headers: {
-          'X-Shopify-Access-Token': session.accessToken,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          order: {
-            line_items: lineItems,
-            customer: { email: customerEmail }
-          }
-        })
-      }
-    );
+    // Create the order using admin API
+    const response = await admin.rest.post({
+      path: 'orders',
+      data: {
+        order: {
+          line_items: lineItems,
+          customer: { email: customerEmail }
+        }
+      },
+    });
 
-    const response = await orderResponse.json();
     console.log('Shopify Order Created:', response);
     
     return json({ 
