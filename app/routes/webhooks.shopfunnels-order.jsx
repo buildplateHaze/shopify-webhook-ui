@@ -27,30 +27,10 @@ export const action = async ({ request }) => {
   }
 
   try {
-    // Clone the request for multiple body reads
-    const requestClone = request.clone();
-    
-    // Try Shopify webhook authentication first
-    try {
-      const { topic, shop, admin } = await authenticate.webhook(requestClone);
-      // If this succeeds, handle Shopify webhook...
-      return json({ success: true });
-    } catch (e) {
-      // If Shopify auth fails, check for ShopFunnels webhook
-      console.log("Not a Shopify webhook, checking for ShopFunnels...");
-    }
-
     const webhookData = await request.json();
     console.log("Received Webhook Payload:", webhookData);
 
-    // Extract data from ShopFunnels format
-    const { customerEmail, items, billingAddress, shippingAddress } = webhookData;
-
-    if (!items || !Array.isArray(items)) {
-      return json({ error: "'items' field is missing or not an array" }, { status: 400 });
-    }
-
-    // For ShopFunnels webhook, we'll need the shop parameter
+    // Get the shop URL from the headers or query params
     const shop = request.headers.get('x-shopify-shop-domain') || new URL(request.url).searchParams.get('shop');
     if (!shop) {
       return json({ error: "Shop parameter is required" }, { status: 400 });
@@ -60,12 +40,13 @@ export const action = async ({ request }) => {
     const { admin } = await authenticate.admin(request, shop);
 
     const lineItems = [];
-    for (let item of items) {
+    for (let item of webhookData.items) {
       const variantId = await getShopifyVariantId(admin, item.sku);
       if (variantId) {
         lineItems.push({ 
           variant_id: variantId, 
-          quantity: item.quantity 
+          quantity: item.quantity,
+          price: item.total / item.quantity // Calculate unit price
         });
       } else {
         console.error(`No matching Shopify SKU found for ${item.sku}`);
@@ -83,30 +64,41 @@ export const action = async ({ request }) => {
         order: {
           line_items: lineItems,
           customer: { 
-            email: customerEmail,
+            email: webhookData.customerEmail,
+          },
+          total_price: webhookData.total,
+          subtotal_price: webhookData.subTotal,
+          total_shipping_price_set: {
+            shop_money: {
+              amount: webhookData.shippingAmount,
+              currency_code: webhookData.currency || "USD"
+            }
           },
           billing_address: {
-            name: billingAddress.name,
-            address1: billingAddress.address,
-            address2: billingAddress.address2,
-            city: billingAddress.city,
-            province: billingAddress.state,
-            zip: billingAddress.zipCode,
-            country_code: billingAddress.country,
-            phone: billingAddress.phone,
-            company: billingAddress.companyName
+            name: webhookData.customerName || webhookData.billingAddress.name,
+            address1: webhookData.billingAddress.address,
+            address2: webhookData.billingAddress.address2,
+            city: webhookData.billingAddress.city,
+            province: webhookData.billingAddress.state,
+            zip: webhookData.billingAddress.zipCode,
+            country_code: webhookData.billingAddress.country,
+            phone: webhookData.billingAddress.phone,
+            company: webhookData.billingAddress.companyName
           },
           shipping_address: {
-            name: shippingAddress.name,
-            address1: shippingAddress.address,
-            address2: shippingAddress.address2,
-            city: shippingAddress.city,
-            province: shippingAddress.state,
-            zip: shippingAddress.zipCode,
-            country_code: shippingAddress.country,
-            phone: shippingAddress.phone,
-            company: shippingAddress.companyName
-          }
+            name: webhookData.customerName || webhookData.shippingAddress.name,
+            address1: webhookData.shippingAddress.address,
+            address2: webhookData.shippingAddress.address2,
+            city: webhookData.shippingAddress.city,
+            province: webhookData.shippingAddress.state,
+            zip: webhookData.shippingAddress.zipCode,
+            country_code: webhookData.shippingAddress.country,
+            phone: webhookData.shippingAddress.phone,
+            company: webhookData.shippingAddress.companyName
+          },
+          financial_status: webhookData.paid ? "paid" : "pending",
+          source_name: "ShopFunnels",
+          tags: ["ShopFunnels"]
         }
       },
     });
