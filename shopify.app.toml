@@ -13,6 +13,11 @@ automatically_update_urls_on_dev = true
 [webhooks]
 api_version = "2025-01"
 
+# Add this section for webhook subscriptions
+[[webhooks.subscriptions]]
+topics = ["orders/create"]
+uri = "/webhooks/order-create"
+
 "ORDERS_CREATE" = "/webhooks/shopfunnels-order"
 "CREATE_ORDER" = "/api/create-order"
 
