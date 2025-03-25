@@ -7,7 +7,7 @@ export const action = async ({ request }) => {
   }
 
   try {
-    // Authenticate the webhook
+    // Authenticate and get webhook data
     const { topic, shop, admin, payload } = await authenticate.webhook(request);
     
     console.log('Webhook received:', {
@@ -16,19 +16,28 @@ export const action = async ({ request }) => {
       payload
     });
 
-    // Handle the order creation
-    if (topic === "orders/create") {
-      // Process the order data from payload
-      const order = payload;
-      console.log('New order received:', order);
+    // Handle different webhook topics
+    switch (topic) {
+      case "orders/create":
+        console.log('New order created:', payload);
+        // Handle new order
+        break;
+      
+      case "orders/updated":
+        console.log('Order updated:', payload);
+        // Handle order update
+        break;
+      
+      case "orders/cancelled":
+        console.log('Order cancelled:', payload);
+        // Handle order cancellation
+        break;
 
-      // You can perform additional actions here
-      // For example, update your database, send notifications, etc.
-
-      return json({ success: true });
+      default:
+        return json({ error: "Unhandled webhook topic" }, { status: 400 });
     }
 
-    return json({ error: "Unhandled webhook topic" }, { status: 400 });
+    return json({ success: true });
 
   } catch (error) {
     console.error("Webhook processing error:", error);
