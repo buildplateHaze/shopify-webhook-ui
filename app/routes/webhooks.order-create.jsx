@@ -7,42 +7,53 @@ export const action = async ({ request }) => {
   }
 
   try {
-    // Authenticate and get webhook data
-    const { topic, shop, admin, payload } = await authenticate.webhook(request);
-    
-    console.log('Webhook received:', {
-      topic,
-      shop,
-      payload
-    });
+    // Get the webhook data
+    const data = await request.json();
+    console.log("Received webhook data:", data);
 
-    // Handle different webhook topics
-    switch (topic) {
-      case "orders/create":
-        console.log('New order created:', payload);
-        // Handle new order
-        break;
-      
-      case "orders/updated":
-        console.log('Order updated:', payload);
-        // Handle order update
-        break;
-      
-      case "orders/cancelled":
-        console.log('Order cancelled:', payload);
-        // Handle order cancellation
-        break;
+    // Get shop from query parameter or header
+    const shop = request.headers.get('x-shopify-shop-domain') || 
+                new URL(request.url).searchParams.get('shop');
 
-      default:
-        return json({ error: "Unhandled webhook topic" }, { status: 400 });
+    if (!shop) {
+      return json({ error: "Shop parameter is required" }, { status: 400 });
     }
 
-    return json({ success: true });
+    // Get admin access
+    const { admin } = await authenticate.admin(request, shop);
+
+    // Create the order
+    const response = await admin.rest.post({
+      path: 'orders',
+      data: {
+        order: {
+          line_items: [{
+            title: data.product_title || "Custom Product",
+            price: data.price || "0.00",
+            quantity: data.quantity || 1
+          }],
+          customer: {
+            email: data.email || "customer@example.com"
+          },
+          financial_status: "paid",
+          source_name: "Webhook Order",
+          tags: ["webhook"]
+        }
+      }
+    });
+
+    console.log("Order created:", response);
+
+    return json({ 
+      success: true, 
+      message: "Order created successfully",
+      order: response.data 
+    });
 
   } catch (error) {
-    console.error("Webhook processing error:", error);
+    console.error("Error processing webhook:", error);
     return json({ 
-      error: "Webhook processing failed", 
+      error: "Failed to process webhook", 
       details: error.message 
     }, { status: 500 });
   }
